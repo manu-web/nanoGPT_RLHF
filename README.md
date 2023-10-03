@@ -15,6 +15,7 @@ Dependencies:
 
 - [pytorch](https://pytorch.org) <3
 - [numpy](https://numpy.org/install/) <3
+- `pip install transformers` for huggingface transformers <3 (to load GPT-2 checkpoints)
 - `pip install datasets` for huggingface datasets <3 (if you want to download + preprocess OpenWebText)
 - `pip install tiktoken` for OpenAI's fast BPE code <3
 - `pip install wandb` for optional logging <3
@@ -35,13 +36,24 @@ To download and tokenize the [OpenWebText](https://huggingface.co/datasets/openw
 $ python train.py
 ```
 
-To train using PyTorch Distributed Data Parallel (DDP) run the script with torchrun. For example to train on a node with 4 GPUs run:
+If you do not have GPU also add `--device=cpu --compile=False`, though you'd have to also adjust the default network size to be much much smaller (see "i only have a macbook" section below). To train using PyTorch Distributed Data Parallel (DDP) run the script with torchrun. For example to train on a node with 4 GPUs run:
 
 ```
 $ torchrun --standalone --nproc_per_node=4 train.py
 ```
 
-Once some checkpoints are written to the output directory (e.g. `./out` by default), we can sample from the model:
+If you're in a cluster environment and are blessed with multiple GPU nodes you can make GPU go brrrr e.g. across 2 nodes like:
+
+```
+Run on the first (master) node with example IP 123.456.123.456:
+$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr=123.456.123.456 --master_port=1234 train.py
+Run on the worker node:
+$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr=123.456.123.456 --master_port=1234 train.py
+```
+
+It is a good idea to benchmark your interconnect (e.g. iperf3). In particular, if you don't have Infiniband then also prepend `NCCL_IB_DISABLE=1` to the above launches. Your multinode training will work, but most likely _crawl_.
+
+By default checkpoints are periodically written to the `--out_dir` (`./out` by default). Once we have one, we can sample from the model:
 
 ```
 $ python sample.py
@@ -97,7 +109,23 @@ $ cd ../..
 $ python train.py --dataset=shakespeare --n_layer=4 --n_head=4 --n_embd=64 --device=cpu --compile=False --eval_iters=1 --block_size=64 --batch_size=8
 ```
 
-This creates a much smaller Transformer (4 layers, 4 heads, 64 embedding size), runs only on CPU, does not torch.compile the model (torch seems to give an error if you try), only evaluates for one iteration so you can see the training loop at work immediately, and also makes sure the context length is much smaller (e.g. 64 tokens), and the batch size is reduced to 8. On my MacBook Air (M1) this takes about 400ms per iteration. The network is still pretty expensive because the current vocabulary is hard-coded to be the GPT-2 BPE encodings of `vocab_size=50257`. So the embeddings table and the last layer are still massive. In the future I may modify the code to support simple character-level encoding, in which case this would fly. (The required changes would actually be pretty minimal, TODO)
+This creates a much smaller Transformer (4 layers, 4 heads, 64 embedding size), runs only on CPU, does not torch.compile the model (torch seems to give an error if you try), only evaluates for one iteration so you can see the training loop at work immediately, and also makes sure the context length is much smaller (e.g. 64 tokens), and the batch size is reduced to 8. On my MacBook Air (M1) this takes about 400ms per iteration. The network is still pretty expensive because the current vocabulary is hard-coded to be the GPT-2 BPE encodings of `vocab_size=50257`. So the embeddings table and the last layer are still massive.
+
+You can now also work with tiny shakespeare on the character level, see `data/shakespeare_char` and run `prepare.py` to tokenize it on the character level. If you have a GPU you can use the decent starter settings in a provided config file, train as follows:
+
+```
+$ python train.py config/train_shakespeare_char.py
+```
+
+But if all you have is a CPU you may want to further override the settings down another notch, e.g.:
+
+```
+$ python train.py config/train_shakespeare_char.py --device=cpu --compile=False --eval_iters=20 --log_interval=1 --block_size=64 --batch_size=8
+```
+
+Where we decrease the context length to just 64 characters and only use a batch size of 8.
+
+Finally, on Apple Silicon Macbooks you can use device `--device mps` ("Metal Performance Shaders"), which can significantly accelerate training (2-3X). You will need a specific version of PyTorch. See [Issue 28](https://github.com/karpathy/nanoGPT/issues/28).
 
 ## benchmarking
 
@@ -130,7 +158,6 @@ Features / APIs
 Suspiciousness
 
 - Current initialization (PyTorch default) departs from GPT-2. In a very quick experiment I found it to be superior to the one suggested in the papers, but that can't be right?
-- I don't currently seem to need gradient clipping but it is very often used (?). Nothing is exploding so far at these scales but maybe I'm leaving performance on the table. Evaluate with/without.
 - I am still not 100% confident that my GPT-2 small reproduction hyperparameters are good, if someone has reproduced GPT-2 I'd be eager to exchange notes ty
 - I keep seeing different values cited for weight decay and AdamW betas, look into
 - I can't exactly reproduce Chinchilla paper results, see [scaling_laws.ipynb](scaling_laws.ipynb) notebook
@@ -139,6 +166,14 @@ Results
 
 - Actually reproduce GPT-2 results and have clean configs that reproduce the result. It was estimated ~3 years ago that the training cost of 1.5B model was ~$50K (?). Sounds a bit too high.
 
-# acknowledgements
+## troubleshooting
 
-Thank you [Lambda labs](https://lambdalabs.com) for supporting the training costs of nanoGPT experiments.
+- Note that by default this repo uses PyTorch 2.0 (i.e. `torch.compile`). This is fairly new and experimental, and not yet available on all platforms (e.g. Windows). If you're running into related error messages try to disable this by adding `--compile=False` flag. This will slow down the code but at least it will run.
+
+For more questions/discussions also feel free to stop by #nanoGPT on Discord:
+
+[![](https://dcbadge.vercel.app/api/server/3zy8kqD9Cp?compact=true&style=flat)](https://discord.gg/3zy8kqD9Cp)
+
+## acknowledgements
+
+All nanoGPT experiments are powered by GPUs on [Lambda labs](https://lambdalabs.com), the best Cloud GPU provider thank you :)
