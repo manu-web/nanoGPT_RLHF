@@ -20,8 +20,8 @@ for heads in range(min_heads, max_heads + 1, 2):
             output = subprocess.check_output(command, shell=True, text=True)
             
             # Use regular expressions to extract training and validation loss
-            training_loss = re.findall(r".*train loss \d+\.\d+.*", output)
-            validation_loss = re.findall(r".*val loss \d+\.\d+.*", output)
+            training_loss = re.findall(r".*train loss (\d+\.\d+).*", output)
+            validation_loss = re.findall(r".*val loss (\d+\.\d+).*", output)
             
             if training_loss and validation_loss:
                 # Store the results for this combination
