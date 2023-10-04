@@ -13,15 +13,15 @@ results = {}
 for heads in range(min_heads, max_heads + 1, 2):
     for layers in range(min_layers, max_layers + 1, 2):
         # Construct the command to run your model (replace with your actual command)
-        command = f"python your_model.py --heads {heads} --layers {layers}"
+        command = f"python train.py config/train_shakespeare_char.py --n_layer={layers} --n_head={heads}"
 
         # Run the command and capture its output
         try:
             output = subprocess.check_output(command, shell=True, text=True)
             
             # Use regular expressions to extract training and validation loss
-            training_loss = re.findall(r"Training Loss: (\d+\.\d+)", output)
-            validation_loss = re.findall(r"Validation Loss: (\d+\.\d+)", output)
+            training_loss = re.findall(r".*train loss \d+\.\d+.*", output)
+            validation_loss = re.findall(r".*val loss \d+\.\d+.*", output)
             
             if training_loss and validation_loss:
                 # Store the results for this combination
@@ -59,4 +59,4 @@ plt.tight_layout()
 plt.gca().set_aspect('auto')
 
 # Show the plot
-plt.show()
+plt.savefig('/content/drive/MyDrive/sample_run.png', bbox_inches='tight')
