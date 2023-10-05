@@ -3,8 +3,8 @@ import re
 import matplotlib.pyplot as plt
 
 # Define the range of heads and layers to vary in multiples of 2
-min_heads, max_heads = 4, 16
-min_layers, max_layers = 4, 16
+min_heads, max_heads = 6, 14
+min_layers, max_layers = 6, 14
 
 # Initialize dictionaries to store results
 results = {}
@@ -16,26 +16,29 @@ for heads in range(min_heads, max_heads + 1, 4):
         command = f"python train.py config/train_shakespeare_char.py --n_layer={layers} --n_head={heads}"
 
         # Run the command and capture its output
-        file_path = "/content/drive/MyDrive/CS839_HW1/training_info/{layers}_layers_{heads}_heads_training.txt"
-        with open(file_path, "w") as file:
-            try:
-                output = subprocess.check_output(command, stdout=file, shell=True, text=True)
-                print(output)
+        file_path = f"/content/drive/MyDrive/CS839_HW1/training_info/{layers}_layers_{heads}_heads_training.txt"
+        try:
+            output = subprocess.check_output(command, shell=True, text=True)
+
+            with open(file_path, "w") as file:
+                file.write(output)
+
+            print(output)
             
-                # Use regular expressions to extract training and validation loss
-                training_loss = re.findall(r".*train loss (\d+\.\d+).*", output)
-                validation_loss = re.findall(r".*val loss (\d+\.\d+).*", output)
+            # Use regular expressions to extract training and validation loss
+            training_loss = re.findall(r".*train loss (\d+\.\d+).*", output)
+            validation_loss = re.findall(r".*val loss (\d+\.\d+).*", output)
             
-                if training_loss and validation_loss:
-                    # Store the results for this combination
-                    results[(heads, layers)] = {
-                        "Training Loss": [float(loss) for loss in training_loss],
-                        "Validation Loss": [float(loss) for loss in validation_loss]
-                    }
+            if training_loss and validation_loss:
+                # Store the results for this combination
+                results[(heads, layers)] = {
+                    "Training Loss": [float(loss) for loss in training_loss],
+                    "Validation Loss": [float(loss) for loss in validation_loss]
+                }
             
-            except subprocess.CalledProcessError as e:
-                print(f"Error running command: {command}")
-                print(e)
+        except subprocess.CalledProcessError as e:
+            print(f"Error running command: {command}")
+            print(e)
 
 # Create a big graph with subgraphs for different combinations
 plt.figure(figsize=(12, 8))
