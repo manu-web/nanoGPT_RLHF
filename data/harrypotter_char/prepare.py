@@ -9,15 +9,20 @@ import pickle
 import requests
 import numpy as np
 
-input_file_path = os.path.join(os.path.dirname(__file__), 'Harry Potter and the Sorcerer\'s Stone.txt')
-if not os.path.exists(input_file_path):
-    data_url = 'https://github.com/manu-web/nanoGPT_CS839/tree/autocast_wip/data/harrypotter_char/Harry Potter and the Sorcerer'
-    with open(input_file_path, 'w') as f:
-        f.write(requests.get(data_url).text)
+input_files = ['Harry Potter and the Sorcerer\'s Stone.txt','Harry Potter and the Chamber of Secrets.txt',
+               'Harry Potter and the Prisoner of Azkaban .txt','Harry Potter and the Goblet of Fire.txt',
+               'Harry Potter and the Order of the Phoenix.txt','Harry Potter and The Half-Blood Prince.txt',
+               'Harry Potter and the Deathly Hallows .txt']
 
-with open(input_file_path, 'r') as f:
-    data = f.read()
-print(f"length of dataset in characters: {len(data):,}")
+data = []
+for file_name in input_files:
+    file_path = os.path.join(os.path.dirname(__file__), file_name)
+    with open(file_path, "r") as file:
+        file_content = file.read()
+        data.append(file_content)
+
+# Combine the content by joining the list with a separator (e.g., newline)
+data = "\n".join(data)
 
 # get all the unique characters that occur in this text
 chars = sorted(list(set(data)))
