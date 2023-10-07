@@ -84,6 +84,6 @@ x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
-            y, _ = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            y, perplexity = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
             print(decode(y[0].tolist()))
-            print('---------------')
+            print('--------------- Perplexity'+perplexity+' ---------------------------------')
