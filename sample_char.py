@@ -6,7 +6,9 @@ import pickle
 from contextlib import nullcontext
 import torch
 import tiktoken
+import argparse
 from model import GPTConfig, GPT
+from functools import reduce
 
 # -----------------------------------------------------------------------------
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
@@ -80,10 +82,32 @@ if start.startswith('FILE:'):
 start_ids = encode(start)
 x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
+parser = argparse.ArgumentParser(description="Argparse for sample_char.py argparse")
+parser.add_argument("--num_samples", type=int, default=10, help="argument to take number of samples, keep it 100 for entropy calculation")
+args = parser.parse_args()
+
+num_samples = args.num_samples
+
 # run generation
+generated_data = []
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
             y, perplexity = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+
+            generated_data.extend(decode(y[0].tolist()))
+            generated_data.append('\n')
+
             print(decode(y[0].tolist()))
             print('--------------- Perplexity'+str(perplexity.float())+' ---------------------------------')
+
+chars = sorted(list(set(generated_data)))
+vocab_size = len(chars)
+n = len(generated_data)
+
+chars_prob_list = []
+for char in chars:
+    chars_prob_list.append((1.0*generated_data.count(char))/n)
+
+entropy_of_generated_samples = reduce(lambda x, y: -x*math.log(x) - y*math.log(y), chars_prob_list)
+print(entropy_of_generated_samples)
