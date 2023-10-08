@@ -9,6 +9,8 @@ import pickle
 import requests
 import numpy as np
 import argparse
+from functools import reduce
+import math
 
 parser = argparse.ArgumentParser(description="A script that demonstrates argparse")
 parser.add_argument("--training_type", type=str, default="scratch", help="argument to change parse method based on finetuning or training from scratch")
@@ -64,11 +66,18 @@ n = len(data)
 train_data = data[:int(n*0.9)]
 val_data = data[int(n*0.9):]
 
+chars_prob_list = []
+for char in chars:
+    chars_prob_list.append((1.0*data.count(char))/n)
+
+entropy_of_training_set = reduce(lambda x, y: -x*math.log(x) - y*math.log(y), chars_prob_list)
+
 # encode both to integers
 train_ids = encode(train_data)
 val_ids = encode(val_data)
 print(f"train has {len(train_ids):,} tokens")
 print(f"val has {len(val_ids):,} tokens")
+print(f"entropy of training distribution is {entropy_of_training_set}")
 
 # export to bin files
 train_ids = np.array(train_ids, dtype=np.uint16)
