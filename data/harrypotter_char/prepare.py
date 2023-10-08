@@ -8,6 +8,11 @@ import os
 import pickle
 import requests
 import numpy as np
+import argparse
+
+parser = argparse.ArgumentParser(description="A script that demonstrates argparse")
+parser.add_argument("--training_type", type=str, default="scratch", help="argument to change parse method based on finetuning or training from scratch")
+args = parser.parse_args()
 
 input_files = ['Harry Potter and the Sorcerer\'s Stone.txt','Harry Potter and the Chamber of Secrets.txt',
                'Harry Potter and the Prisoner of Azkaban .txt','Harry Potter and the Goblet of Fire.txt',
@@ -24,9 +29,25 @@ for file_name in input_files:
 # Combine the content by joining the list with a separator (e.g., newline)
 data = "\n".join(data)
 
+# download the tiny shakespeare dataset
+input_file_path = os.path.join(os.path.dirname(__file__), 'input.txt')
+if not os.path.exists(input_file_path):
+    data_url = 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt'
+    with open(input_file_path, 'w') as f:
+        f.write(requests.get(data_url).text)
+
+with open(input_file_path, 'r') as f:
+    data_shakespeare = f.read()
+
+if(args.training_type == "finetuning"):
+    chars_shakespeare = sorted(list(set(data_shakespeare)))
+    vocab_size_shakespeare = len(chars_shakespeare)
+    data = list(filter(lambda x: x in chars_shakespeare, data))
+
 # get all the unique characters that occur in this text
 chars = sorted(list(set(data)))
 vocab_size = len(chars)
+
 print("all the unique characters:", ''.join(chars))
 print(f"vocab size: {vocab_size:,}")
 
