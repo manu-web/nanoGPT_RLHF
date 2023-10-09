@@ -330,7 +330,4 @@ class GPT(nn.Module):
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
 
-        avg_loss = -1.0*(total_loss/max_new_tokens)
-        perplexity = torch.exp(avg_loss)
-
-        return idx, perplexity
+        return idx, total_loss

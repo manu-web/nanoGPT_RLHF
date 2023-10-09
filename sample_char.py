@@ -9,6 +9,7 @@ import tiktoken
 import argparse
 from model import GPTConfig, GPT
 from functools import reduce
+import math
 
 # -----------------------------------------------------------------------------
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
@@ -90,17 +91,21 @@ num_samples = args.num_samples
 
 # run generation
 generated_data = []
+total_tokens = 0
+total_loss = 0.0
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
-            y, perplexity = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            y, loss = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            total_loss += loss
+            total_tokens += max_new_tokens
 
             generated_data.extend(decode(y[0].tolist()))
             generated_data.append('\n')
 
             print(decode(y[0].tolist()))
-            print('--------------- Perplexity'+str(perplexity.float())+' ---------------------------------')
 
+perplexity = math.exp((-1.0*total_loss)/total_tokens)
 chars = sorted(list(set(generated_data)))
 vocab_size = len(chars)
 n = len(generated_data)
@@ -110,4 +115,5 @@ for char in chars:
     chars_prob_list.append((1.0*generated_data.count(char))/n)
 
 entropy_of_generated_samples = reduce(lambda x, y: -x*math.log(x) - y*math.log(y), chars_prob_list)
-print(entropy_of_generated_samples)
+print(f"Entropy_of_generated_samples = {entropy_of_generated_samples}")
+print(f"Perplexity = {perplexity}")

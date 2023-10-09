@@ -12,7 +12,7 @@ import argparse
 from functools import reduce
 import math
 
-parser = argparse.ArgumentParser(description="A script that demonstrates argparse")
+parser = argparse.ArgumentParser(description="Argparse for")
 parser.add_argument("--training_type", type=str, default="scratch", help="argument to change parse method based on finetuning or training from scratch")
 args = parser.parse_args()
 
