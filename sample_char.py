@@ -111,13 +111,17 @@ vocab_size = len(chars)
 n = len(generated_data)
 
 chars_prob_list = []
-for char in chars:
+char_lookup = {}
+
+for char in chars: 
     chars_prob_list.append((1.0*generated_data.count(char))/n)
+    char_lookup[char] = (1.0*generated_data.count(char))/n
 
 entropy_of_generated_samples = sum([-prob*log2(prob) for prob in chars_prob_list])
-log_probabilities = [log2(prob) for prob in chars_prob_list]
+log_probabilities = [log2(char_lookup[char]) for char in generated_data]
 
-average_log_prob = sum(log_probabilities)/vocab_size 
+
+average_log_prob = sum(log_probabilities)/n
 
 # Calculate perplexity
 perplexity = 2 ** -average_log_prob
