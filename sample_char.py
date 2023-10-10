@@ -8,7 +8,7 @@ import torch
 import tiktoken
 import argparse
 from model import GPTConfig, GPT
-from functools import reduce
+from math import log2
 import math
 
 # -----------------------------------------------------------------------------
@@ -105,7 +105,7 @@ with torch.no_grad():
 
             print(decode(y[0].tolist()))
 
-perplexity = math.exp((-1.0*total_loss)/total_tokens)
+#perplexity = math.exp((-1.0*total_loss)/total_tokens)
 chars = sorted(list(set(generated_data)))
 vocab_size = len(chars)
 n = len(generated_data)
@@ -114,6 +114,13 @@ chars_prob_list = []
 for char in chars:
     chars_prob_list.append((1.0*generated_data.count(char))/n)
 
-entropy_of_generated_samples = reduce(lambda x, y: -x*math.log(x) - y*math.log(y), chars_prob_list)
+entropy_of_generated_samples = sum([-prob*log2(prob) for prob in chars_prob_list])
+log_probabilities = [log2(prob) for prob in chars_prob_list]
+
+average_log_prob = sum(log_probabilities)/vocab_size 
+
+# Calculate perplexity
+perplexity = 2 ** -average_log_prob
+
 print(f"Entropy_of_generated_samples = {entropy_of_generated_samples}")
 print(f"Perplexity = {perplexity}")
