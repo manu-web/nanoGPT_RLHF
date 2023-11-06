@@ -119,13 +119,36 @@ def get_batch(split):
     data = train_data if split == 'train' else val_data
     ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
-    y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
+    if(model.config.reward_model):
+        y = torch.stack([reward(torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64))) for i in ix])
+    else:
+        y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
+        
     if device_type == 'cuda':
         # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
         x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
     else:
         x, y = x.to(device), y.to(device)
     return x, y
+
+def calculate_vowel_percentage(input_string):
+    total_characters = len(input_string)
+    vowel_count = 0
+    consonant_count = 0
+
+    for char in input_string:
+        if char.lower() in 'aeiou':
+            vowel_count += 1
+        elif(char.isalpha() and char.lower() not in 'aeiou'):
+            consonant_count += 1
+
+    return (vowel_count*1.0)/(vowel_count+consonant_count)
+        
+def reward(sequence):
+    if(calculate_vowel_percentage(str(sequence)) >= 0.38): # 0.38 is the percentage of vowels in English alphabets on Oxford dictionary
+        return torch.tensor([1.0,0.0])
+    else:
+        return torch.tensor([0.0,1.0])
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
 iter_num = 0

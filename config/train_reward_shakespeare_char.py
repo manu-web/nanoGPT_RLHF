@@ -36,4 +36,4 @@ warmup_iters = 100 # not super necessary potentially
 device = 'cpu'  # run on cpu only
 compile = False # do not torch compile the model
 
-reward_model = False
+reward_model = True
