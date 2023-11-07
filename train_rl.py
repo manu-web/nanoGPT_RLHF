@@ -26,6 +26,7 @@ import numpy as np
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
+from torch.nn import functional as F
 
 from model import GPTConfig, GPT
 
@@ -33,6 +34,7 @@ from model import GPTConfig, GPT
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
 out_dir = 'out'
+out_dir_reward_model = 'out_reward'
 eval_interval = 2000
 log_interval = 1
 eval_iters = 200
@@ -65,7 +67,6 @@ grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
 lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
-reward_model = False
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
@@ -120,7 +121,7 @@ def get_batch(split):
     data = train_data if split == 'train' else val_data
     ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
-    if(reward_model):
+    if(model.config.reward_model):
         y = torch.stack([reward(torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64))) for i in ix])
     else:
         y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
@@ -167,6 +168,33 @@ if os.path.exists(meta_path):
 # model init
 model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
                   bias=bias, vocab_size=None, dropout=dropout, reward_model=reward_model) # start with model_args from command line
+
+print(f"Loading weights for reward model from {out_dir_reward_model}")
+# resume training from a checkpoint.
+ckpt_path_reward = os.path.join(out_dir_reward_model, 'ckpt.pt')
+checkpoint_reward = torch.load(ckpt_path_reward, map_location=device)
+checkpoint_model_reward_args = checkpoint_reward['model_args']
+# force these config attributes to be equal otherwise we can't even resume training
+# the rest of the attributes (e.g. dropout) can stay as desired from command line
+for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size','reward_model']:
+    model_args[k] = checkpoint_model_reward_args[k]
+    
+# create the model
+gptconf = GPTConfig(**model_args)
+rw_model = GPT(gptconf)
+state_dict = checkpoint_reward['model']
+# fix the keys of the state dictionary :(
+# honestly no idea how checkpoints sometimes get this prefix, have to debug more
+unwanted_prefix = '_orig_mod.'
+for k,v in list(state_dict.items()):
+    if k.startswith(unwanted_prefix):
+        state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+        rw_model.load_state_dict(state_dict)
+    rw_model.load_state_dict(state_dict)
+
+model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
+                  bias=bias, vocab_size=None, dropout=dropout, reward_model=reward_model)
+    
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")
@@ -174,11 +202,6 @@ if init_from == 'scratch':
     if meta_vocab_size is None:
         print("defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)")
     model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
-    if(reward_model):
-        model_args['reward_model'] = True
-
-    print('reward_model = {}'.format(reward_model))
-
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
 elif init_from == 'resume':
@@ -189,13 +212,9 @@ elif init_from == 'resume':
     checkpoint_model_args = checkpoint['model_args']
     # force these config attributes to be equal otherwise we can't even resume training
     # the rest of the attributes (e.g. dropout) can stay as desired from command line
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size', 'reward_model']:
+    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
         model_args[k] = checkpoint_model_args[k]
     # create the model
-    
-    if(reward_model):
-        model_args['reward_model'] = True
-
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
     state_dict = checkpoint['model']
@@ -246,12 +265,16 @@ if ddp:
 def estimate_loss():
     out = {}
     model.eval()
+
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
             with ctx:
-                logits, loss = model(X, Y)
+                logits, _ = model(X, Y)
+                rewards = rw_model.forward_reward(X)
+                log_prob_dist = F.log_softmax(logits, -1)
+                loss = (rewards.unsqueeze(2) * log_prob_dist).mean()
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train()

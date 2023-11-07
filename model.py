@@ -112,7 +112,7 @@ class GPTConfig:
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
-    reward_model : bool = True
+    reward_model : bool = False
     dropout: float = 0.0
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
 
@@ -133,7 +133,7 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         if(self.config.reward_model):
-            self.reward_head = nn.Linear(config.vocab_size, 2, bias=False)
+            self.reward_head = nn.Linear(self.lm_head.in_features, 2, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
         # This behavior is deprecated and will be an error in future versions"
@@ -187,13 +187,11 @@ class GPT(nn.Module):
         if targets is not None:
             # if we are given some desired targets also calculate the loss
             if(self.config.reward_model):
-                x = self.lm_head(x)
                 logits = self.reward_head(x[:, -1, :])
+                loss = F.cross_entropy(logits, targets, ignore_index=-1)
             else:
                 logits = self.lm_head(x)
-
-            loss = F.cross_entropy(logits, targets, ignore_index=-1)
-            #loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)   
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
@@ -318,6 +316,7 @@ class GPT(nn.Module):
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
         Most likely you'll want to make sure to be in model.eval() mode of operation for this.
         """
+
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
@@ -336,4 +335,36 @@ class GPT(nn.Module):
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
 
+        states = idx[:,-max_new_tokens:]
+
+        if(self.config.reward_model):
+            rewards = reward_model.forward_reward(torch.tensor(states))[0][:,1].unsqueeze(-1)
+                    
         return idx
+    
+    def forward_reward(self, idx):
+        """
+        Reward for a particular sequence of tokens
+        """
+        device = idx.device
+        b, t = idx.size()
+        assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
+        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
+
+        # forward the GPT model itself
+        tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
+        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd)
+        x = self.transformer.drop(tok_emb + pos_emb)
+        for block in self.transformer.h:
+            x = block(x)
+        x = self.transformer.ln_f(x)
+
+        # if we are given some desired targets also calculate the loss
+        logits = self.reward_head(x[:, -1, :])
+        predicted_classes = torch.argmax(logits, dim=1)
+
+        output_binary = (predicted_classes == 0).int()
+        output_binary_tensor = torch.as_tensor(output_binary)
+        output_binary_tensor = torch.unsqueeze(output_binary_tensor,1)
+
+        return output_binary_tensor
